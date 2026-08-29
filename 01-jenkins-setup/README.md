@@ -4,12 +4,7 @@ This is a pure AWS Management Console walkthrough for Jenkins Setup:
 a Jenkins controller behind an ALB/ASG with `JENKINS_HOME` on EFS, plus
 a separate Jenkins agent instance.
 
-**One honest caveat:** the AWS Console can create every piece of *infrastructure*
-by clicking (IAM, EFS, EC2, ALB, ASG). But installing software *inside* an
-instance (Java, Jenkins, mounting EFS) has no console button for it - that part
-needs a terminal session into the instance where you type the commands yourself.
-This guide uses **EC2 Instance Connect** (a browser-based terminal built into the
-EC2 console) for that, so you never need PuTTY, Git Bash, or a local SSH client.
+![Architecture Diagram](../img/jenkins-setup-architecture.png)
 
 ## Prerequisites
 
@@ -37,15 +32,11 @@ See the simplification note in Step 5 for skipping this entirely.)*
    ```
 3. Name it `jenkins-iam-policy` and create it.
 
-![Architecture Diagram](../img/jenkins-iam-policy.png)
-
 4. Go to **IAM → Roles → Create role** → Trusted entity type: **AWS service** →
    Use case: **EC2** → Next.
 5. Attach `jenkins-iam-policy` → Next → name the role `jenkins-role` → Create role.
    (The console automatically creates a matching instance profile you'll attach at
    launch time.)
-
-![Architecture Diagram](../img/jenkins-role.png)
 
 ## Step 2 - Create security groups
 
@@ -59,7 +50,6 @@ Go to **EC2 → Security Groups → Create security group**, and create these fo
 | `jenkins-controller-sg` | TCP 22 and TCP 8080 from jenkins-alb-sg | All traffic |
 | `jenkins-alb-sg` | TCP 80 from 0.0.0.0/0 | All traffic |
 
-![Architecture Diagram](../img/security-groups.png)
 
 ## Step 3 - Create the EFS filesystem
 
@@ -71,7 +61,8 @@ Go to **EC2 → Security Groups → Create security group**, and create these fo
    filesystem's detail page (e.g. `fs-01e1859c291c96122.efs.ap-south-1.amazonaws.com`) —
    you'll mount this on the controller.
 
-![Architecture Diagram](../img/efs.png)
+![Architecture Diagram](../img/jenkins-efs.png)
+
 
 ## Step 4 - Create a key pair
 
@@ -80,7 +71,6 @@ Go to **EC2 → Key Pairs → Create key pair**. Name it e.g. `jenkins-key`, for
 and agent instances — that's what lets the controller SSH into the agent with no
 extra setup (see Step 5).
 
-![Architecture Diagram](../img/key-pair.png)
 
 ## Step 5 - Build the controller AMI
 
@@ -93,8 +83,6 @@ extra setup (see Step 5).
    - Advanced details → IAM instance profile: leave blank (the controller doesn't
      need one - only the agent does, and only if you're doing the SSM trick)
    - Launch it.
-
-![Architecture Diagram](../img/jenkins-controller-build.png)
 
 2. Select the running instance → **Connect → EC2 Instance Connect → Connect**.
    This opens a terminal in your browser, logged in as `ubuntu`.
@@ -163,8 +151,6 @@ extra setup (see Step 5).
    - IAM instance profile: `jenkins-role` (only needed if fetching the key from
      SSM - skip if using the same-key-pair simplification below)
 
-![Architecture Diagram](../img/jenkins-agent-build-1.png)
-![Architecture Diagram](../img/jenkins-agent-build-2.png)
 
 2. Connect via **EC2 Instance Connect** and run:
 
@@ -223,7 +209,6 @@ for later.
    - VPC: your VPC
    - Health check path: `/login`
    - Create it (don't register any instances yet - the ASG will do that).
-![Architecture Diagram](../img/jenkins-target-group.png)
 
 2. **EC2 → Load Balancers → Create load balancer → Application Load Balancer.**
    - Name: `jenkins-alb`
@@ -232,8 +217,6 @@ for later.
    - Security group: `jenkins-alb-sg`
    - Listener: HTTP : 80 → forward to the target group from step 1
    - Create it.
-![Architecture Diagram](../img/jenkins-alb-1.png)
-![Architecture Diagram](../img/jenkins-alb-2.png)
 
 ## Step 9 - Launch template + Auto Scaling Group
 
@@ -252,15 +235,16 @@ for later.
    - Attach to an existing load balancer target group → select the one from
      Step 8
    - Health checks: enable ELB health checks
-   - Desired/min/max capacity: **1 / 1 / 2**
+   - Desired/min/max capacity: **1 / 1 / 1**
    - Create the ASG. It will launch one controller instance from the AMI.
-![Architecture Diagram](../img/jenkins-asg-1.png)
-![Architecture Diagram](../img/jenkins-asg-2.png)
+
+![Architecture Diagram](../img/jenkins-asg.png)
 
 ## Step 10 - Access Jenkins
 
 1. **EC2 → Load Balancers → `jenkins-alb`** → copy the **DNS name**.
 2. Browse to `http://<alb-dns-name>`.
+![Architecture Diagram](../img/jenkins-alb.png)
 3. To get the initial admin password: **EC2 → Instances**, find the instance the
    ASG launched (named `jenkins-controller`), connect via **EC2 Instance Connect**,
    and run:
@@ -268,7 +252,6 @@ for later.
    sudo cat /data/jenkins/secrets/initialAdminPassword
    ```
 4. Paste that into the setup wizard and finish onboarding.
-
 ![Architecture Diagram](../img/jenkins-ui.png)
 
 ## Step 11 - Register the agent node in Jenkins
@@ -280,7 +263,6 @@ for later.
    - Private Key → Enter directly → paste the full contents of your
      `jenkins-key.pem` file (including the `BEGIN`/`END` lines)
      
-     ![Architecture Diagram](../img/jenkins-agent-key.png)
 
 2. **Manage Jenkins → Nodes → New Node** → name it → **Permanent Agent** →
    Create.
@@ -297,13 +279,11 @@ for later.
      EFS, that directory no longer exists — so "Known hosts file" verification
      will always fail here.
    - Save.
-   ![Architecture Diagram](../img/jenkins-agent-node-setup-1.png)
-   ![Architecture Diagram](../img/jenkins-agent-node-setup-2.png)
 
 3. Click the node → **Log** tab to watch it connect. You should see
    `Authenticated to <ip> ... using "publickey"` followed by `Agent
    successfully connected and online`.
-
+   ![Architecture Diagram](../img/jenkins-agent-node.png)
 
 ## Tearing it down
 
