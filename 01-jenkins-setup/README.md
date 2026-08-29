@@ -60,8 +60,7 @@ Go to **EC2 → Security Groups → Create security group**, and create these fo
 3. Create it, and once it's available, **copy the DNS name** shown on the
    filesystem's detail page (e.g. `fs-01e1859c291c96122.efs.ap-south-1.amazonaws.com`) —
    you'll mount this on the controller.
-
-![Architecture Diagram](../img/jenkins-efs.png)
+   ![Architecture Diagram](../img/jenkins-efs.png)
 
 
 ## Step 4 - Create a key pair
@@ -129,14 +128,12 @@ extra setup (see Step 5).
    ```
 
 4. Confirm `status` shows `active (running)`.
-
 ![Architecture Diagram](../img/jenkins-systemctl-status.png)
 
 5. Back in the EC2 console: select the instance → **Actions → Image and templates
    → Create image**. Name it `jenkins-controller-ami`. Wait for it to become
    `available` under **AMIs**.
-
-![Architecture Diagram](../img/jenkins-controller-ami.png)
+   ![Architecture Diagram](../img/jenkins-controller-ami.png)
 
 6. **Terminate** the temporary `jenkins-controller-build` instance - the real
    controller instance will be launched from this AMI by the ASG in Step 8.
@@ -182,8 +179,7 @@ extra setup (see Step 5).
 
 3. **Actions → Image and templates → Create image** → name it
    `jenkins-agent-ami`.
-
-![Architecture Diagram](../img/jenkins-agent-ami.png)
+   ![Architecture Diagram](../img/jenkins-agent-ami.png)
 
 4. Terminate the temporary jenkins-agent-build instance - the real agent instance will be launched from this AMI in Step 7.
 
@@ -194,7 +190,6 @@ extra setup (see Step 5).
 - Key pair: `jenkins-key`
 - Security group: `jenkins-agent-sg`
 - Subnet: your choice
-
 ![Architecture Diagram](../img/jenkins-agent-build-from-ami.png)
 
 Launch it. This is your permanent Jenkins agent node - note its private/public IP
@@ -237,8 +232,8 @@ for later.
    - Health checks: enable ELB health checks
    - Desired/min/max capacity: **1 / 1 / 1**
    - Create the ASG. It will launch one controller instance from the AMI.
-
-![Architecture Diagram](../img/jenkins-asg.png)
+   
+   ![Architecture Diagram](../img/jenkins-asg.png)
 
 ## Step 10 - Access Jenkins
 
