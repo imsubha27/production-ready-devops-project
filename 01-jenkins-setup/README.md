@@ -56,7 +56,7 @@ Go to **EC2 → Security Groups → Create security group**, and create these fo
 |---|---|---|
 | `efs-sg` | TCP 2049 from your VPC CIDR (or the agent/controller SGs) | All traffic |
 | `jenkins-agent-sg` | TCP 22 from your IP (or 0.0.0.0/0 for a lab) | All traffic |
-| `jenkins-controller-sg` | TCP 22 and TCP 8080 from your IP | All traffic |
+| `jenkins-controller-sg` | TCP 22 and TCP 8080 from jenkins-alb-sg | All traffic |
 | `jenkins-alb-sg` | TCP 80 from 0.0.0.0/0 | All traffic |
 
 ![Architecture Diagram](../img/security-groups.png)
@@ -163,14 +163,15 @@ extra setup (see Step 5).
    - IAM instance profile: `jenkins-role` (only needed if fetching the key from
      SSM - skip if using the same-key-pair simplification below)
 
-![Architecture Diagram](../img/jenkins-agent-build.png)
+![Architecture Diagram](../img/jenkins-agent-build-1.png)
+![Architecture Diagram](../img/jenkins-agent-build-2.png)
 
 2. Connect via **EC2 Instance Connect** and run:
 
    ```bash
    sudo apt update -y
-   sudo apt install -y openjdk-17-jdk python3 python3-pip curl unzip
-
+   sudo apt install -y fontconfig openjdk-21-jre python3 python3-pip curl unzip
+   
    # AWS CLI
    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
    unzip awscliv2.zip
@@ -189,14 +190,18 @@ extra setup (see Step 5).
    **On the SSH trust step:** the original project fetches a public key from SSM
    Parameter Store and adds it to `authorized_keys` so the controller can SSH in.
    Since you launched this instance with the **same key pair** as the controller,
-   that's already true — nothing more to do. (If you ever use a *different* key
+   that's already true - nothing more to do. (If you ever use a *different* key
    for the controller, just paste its public key manually:
    `echo "<controller-public-key-contents>" >> ~/.ssh/authorized_keys`.)
 
 3. **Actions → Image and templates → Create image** → name it
    `jenkins-agent-ami`.
 
-## Step 7 — Launch the real agent instance
+![Architecture Diagram](../img/jenkins-agent-ami.png)
+
+4. Terminate the temporary jenkins-agent-build instance - the real agent instance will be launched from this AMI in Step 7.
+
+## Step 7 - Launch the real agent instance
 
 **EC2 → Launch instance**, this time choosing:
 - AMI: **My AMIs → `jenkins-agent-ami`**
@@ -204,17 +209,21 @@ extra setup (see Step 5).
 - Security group: `jenkins-agent-sg`
 - Subnet: your choice
 
-Launch it. This is your permanent Jenkins agent node — note its private/public IP
+![Architecture Diagram](../img/jenkins-agent-build-from-ami.png)
+
+Launch it. This is your permanent Jenkins agent node - note its private/public IP
 for later.
 
-## Step 8 — Target group + Application Load Balancer
+
+## Step 8 - Target group + Application Load Balancer
 
 1. **EC2 → Target Groups → Create target group.**
    - Target type: Instances
    - Protocol/port: HTTP / 8080
    - VPC: your VPC
    - Health check path: `/login`
-   - Create it (don't register any instances yet — the ASG will do that).
+   - Create it (don't register any instances yet - the ASG will do that).
+![Architecture Diagram](../img/jenkins-target-group.png)
 
 2. **EC2 → Load Balancers → Create load balancer → Application Load Balancer.**
    - Name: `jenkins-alb`
@@ -223,8 +232,10 @@ for later.
    - Security group: `jenkins-alb-sg`
    - Listener: HTTP : 80 → forward to the target group from step 1
    - Create it.
+![Architecture Diagram](../img/jenkins-alb-1.png)
+![Architecture Diagram](../img/jenkins-alb-2.png)
 
-## Step 9 — Launch template + Auto Scaling Group
+## Step 9 - Launch template + Auto Scaling Group
 
 1. **EC2 → Launch Templates → Create launch template.**
    - Name: `jenkins-controller-lt`
@@ -240,11 +251,13 @@ for later.
    - VPC + subnets (same as the EFS mount targets)
    - Attach to an existing load balancer target group → select the one from
      Step 8
-   - Desired/min/max capacity: **1 / 1 / 1**
    - Health checks: enable ELB health checks
+   - Desired/min/max capacity: **1 / 1 / 2**
    - Create the ASG. It will launch one controller instance from the AMI.
+![Architecture Diagram](../img/jenkins-asg-1.png)
+![Architecture Diagram](../img/jenkins-asg-2.png)
 
-## Step 10 — Access Jenkins
+## Step 10 - Access Jenkins
 
 1. **EC2 → Load Balancers → `jenkins-alb`** → copy the **DNS name**.
 2. Browse to `http://<alb-dns-name>`.
@@ -256,14 +269,41 @@ for later.
    ```
 4. Paste that into the setup wizard and finish onboarding.
 
-## Step 11 — Register the agent node in Jenkins
+![Architecture Diagram](../img/jenkins-ui.png)
 
-In the Jenkins UI: **Manage Jenkins → Nodes → New Node** → *Launch agents via SSH*.
-- Host: the agent instance's IP (from Step 7)
-- Credentials → Add → SSH Username with private key → paste the contents of your
-  `jenkins-key.pem` file
-- Remote root directory: `/home/ubuntu/agent`
-- Host Key Verification Strategy: "Non verifying" is simplest for a lab setup
+## Step 11 - Register the agent node in Jenkins
+ 
+1. **Add the credential first: Manage Jenkins → Credentials → System → Global
+   credentials → Add Credentials.**
+   - Kind: **SSH Username with private key**
+   - Username: `ubuntu`
+   - Private Key → Enter directly → paste the full contents of your
+     `jenkins-key.pem` file (including the `BEGIN`/`END` lines)
+     
+     ![Architecture Diagram](../img/jenkins-agent-key.png)
+
+2. **Manage Jenkins → Nodes → New Node** → name it → **Permanent Agent** →
+   Create.
+   - Remote root directory: `/home/ubuntu/agent`
+   - Launch method: **Launch agents via SSH**
+   - Host: the agent instance's private IP (from Step 7)
+   - Credentials: the one you just created
+   - **Host Key Verification Strategy: set this to "Non verifying Verification
+     Strategy" explicitly.** Don't leave it on "Known hosts file" — that
+     strategy checks `~/.ssh/known_hosts` under the **OS-level `jenkins` system
+     user's real home directory** (`/var/lib/jenkins`, from `/etc/passwd`),
+     which is completely separate from the `JENKINS_HOME` environment
+     variable. Since this guide deletes `/var/lib/jenkins` when moving data to
+     EFS, that directory no longer exists — so "Known hosts file" verification
+     will always fail here.
+   - Save.
+   ![Architecture Diagram](../img/jenkins-agent-node-setup-1.png)
+   ![Architecture Diagram](../img/jenkins-agent-node-setup-2.png)
+
+3. Click the node → **Log** tab to watch it connect. You should see
+   `Authenticated to <ip> ... using "publickey"` followed by `Agent
+   successfully connected and online`.
+
 
 ## Tearing it down
 
@@ -279,9 +319,9 @@ Delete in this order to avoid dependency errors:
 
 ## Notes
 
-- Security groups above are permissive (SSH/8080 open to your IP or the internet)
-  — fine for a personal lab, tighten before using this for anything real.
+- Security groups above are permissive (SSH/8080 open to your IP or the internet) -
+fine for a personal lab, tighten before using this for anything real.
 - Reusing the same key pair for both instances is a simplification over the
-  original SSM-based approach — functionally equivalent for a single-agent setup,
+  original SSM-based approach - functionally equivalent for a single-agent setup,
   but if you add more agents with different owners/keys later, you'd want to go
   back to distributing keys via SSM or manually appending each one.
