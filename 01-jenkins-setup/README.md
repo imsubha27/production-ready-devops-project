@@ -1,4 +1,4 @@
-# Jenkins HA Setup on AWS — Manual Console Deployment (No Terraform / Ansible / CLI)
+# Jenkins HA Setup on AWS - Manual Console Deployment
 
 This is a pure AWS Management Console walkthrough for Jenkins Setup:
 a Jenkins controller behind an ALB/ASG with `JENKINS_HOME` on EFS, plus
@@ -6,7 +6,7 @@ a separate Jenkins agent instance.
 
 **One honest caveat:** the AWS Console can create every piece of *infrastructure*
 by clicking (IAM, EFS, EC2, ALB, ASG). But installing software *inside* an
-instance (Java, Jenkins, mounting EFS) has no console button for it — that part
+instance (Java, Jenkins, mounting EFS) has no console button for it - that part
 needs a terminal session into the instance where you type the commands yourself.
 This guide uses **EC2 Instance Connect** (a browser-based terminal built into the
 EC2 console) for that, so you never need PuTTY, Git Bash, or a local SSH client.
@@ -16,7 +16,7 @@ EC2 console) for that, so you never need PuTTY, Git Bash, or a local SSH client.
 - An AWS account with a VPC and at least 2–3 subnets already set up.
 - Access to the AWS Management Console.
 
-## Step 1 — Create the IAM role
+## Step 1 - Create the IAM role
 
 *(Only needed if you want the agent to fetch its SSH key from SSM.
 See the simplification note in Step 5 for skipping this entirely.)*
@@ -37,7 +37,7 @@ See the simplification note in Step 5 for skipping this entirely.)*
    ```
 3. Name it `jenkins-iam-policy` and create it.
 
-![Architecture Diagram](img/jenkins-iam-policy.png)
+![Architecture Diagram](../img/jenkins-iam-policy.png)
 
 4. Go to **IAM → Roles → Create role** → Trusted entity type: **AWS service** →
    Use case: **EC2** → Next.
@@ -45,10 +45,12 @@ See the simplification note in Step 5 for skipping this entirely.)*
    (The console automatically creates a matching instance profile you'll attach at
    launch time.)
 
-## Step 2 — Create security groups
+![Architecture Diagram](../img/jenkins-role.png)
+
+## Step 2 - Create security groups
 
 Go to **EC2 → Security Groups → Create security group**, and create these four
-(pick your VPC each time):
+(pick default VPC each time):
 
 | Name | Inbound rules | Outbound |
 |---|---|---|
@@ -57,34 +59,42 @@ Go to **EC2 → Security Groups → Create security group**, and create these fo
 | `jenkins-controller-sg` | TCP 22 and TCP 8080 from your IP | All traffic |
 | `jenkins-alb-sg` | TCP 80 from 0.0.0.0/0 | All traffic |
 
-## Step 3 — Create the EFS filesystem
+![Architecture Diagram](../img/security-groups.png)
+
+## Step 3 - Create the EFS filesystem
 
 1. Go to **EFS → File systems → Create file system**.
 2. Name: `jenkins`, VPC: your VPC, leave "Customize" defaults except:
    - Under **Network access**, set the security group for each mount target to
      `efs-sg`.
 3. Create it, and once it's available, **copy the DNS name** shown on the
-   filesystem's detail page (e.g. `fs-0123abcd.efs.us-west-2.amazonaws.com`) —
+   filesystem's detail page (e.g. `fs-01e1859c291c96122.efs.ap-south-1.amazonaws.com`) —
    you'll mount this on the controller.
 
-## Step 4 — Create a key pair
+![Architecture Diagram](../img/efs.png)
+
+## Step 4 - Create a key pair
 
 Go to **EC2 → Key Pairs → Create key pair**. Name it e.g. `jenkins-key`, format
 `.pem`, and download it. You'll use this **same key pair** for both the controller
 and agent instances — that's what lets the controller SSH into the agent with no
 extra setup (see Step 5).
 
-## Step 5 — Build the controller AMI
+![Architecture Diagram](../img/key-pair.png)
+
+## Step 5 - Build the controller AMI
 
 1. **EC2 → Instances → Launch instance.**
    - Name: `jenkins-controller-build`
-   - AMI: Ubuntu Server 22.04 LTS
-   - Instance type: `t2.micro` (or `t3.small`)
+   - AMI: Ubuntu Server 24.04 LTS
+   - Instance type: `t3.micro` (or `t3.small`)
    - Key pair: `jenkins-key`
-   - Network: your VPC/subnet, security group `jenkins-controller-sg`
+   - Network: default VPC/subnet, security group `jenkins-controller-sg`
    - Advanced details → IAM instance profile: leave blank (the controller doesn't
-     need one — only the agent does, and only if you're doing the SSM trick)
+     need one - only the agent does, and only if you're doing the SSM trick)
    - Launch it.
+
+![Architecture Diagram](../img/jenkins-controller-build.png)
 
 2. Select the running instance → **Connect → EC2 Instance Connect → Connect**.
    This opens a terminal in your browser, logged in as `ubuntu`.
@@ -94,18 +104,21 @@ extra setup (see Step 5).
 
    ```bash
    sudo apt update -y
-   sudo apt install -y openjdk-17-jdk nfs-common curl unzip
+   sudo apt install -y nfs-common curl unzip
+   sudo apt-get install -y fontconfig openjdk-21-jre
 
    # Mount EFS
    sudo mkdir -p /data
    sudo mount -t nfs4 -o nfsvers=4.1 <EFS-DNS-NAME>:/ /data
    echo "<EFS-DNS-NAME>:/ /data nfs4 nfsvers=4.1 0 0" | sudo tee -a /etc/fstab
 
-   # Add the Jenkins apt repo and install the pinned version
-   curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | sudo tee /etc/apt/trusted.gpg.d/jenkins.asc
-   echo "deb https://pkg.jenkins.io/debian-stable binary/" | sudo tee /etc/apt/sources.list.d/jenkins.list
-   sudo apt update -y
-   sudo apt install -y jenkins=2.492.1
+   # Fetch key 
+   curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key | sudo tee /usr/share/keyrings/jenkins-keyring.asc > /dev/null
+   # add repo pointing at it
+   echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/" | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
+
+   sudo apt-get update
+   sudo apt-get install -y jenkins
 
    # Move JENKINS_HOME onto EFS
    sudo systemctl stop jenkins
@@ -116,11 +129,10 @@ extra setup (see Step 5).
 
    # Point Jenkins at the new home directory
    sudo mkdir -p /etc/systemd/system/jenkins.service.d
-   sudo tee /etc/systemd/system/jenkins.service.d/override.conf > /dev/null <<'EOF'
-   [Service]
-   Environment="JENKINS_HOME=/data/jenkins"
-   WorkingDirectory=/data/jenkins
-   EOF
+   sudo bash -c 'printf "[Service]\nEnvironment=\"JENKINS_HOME=/data/jenkins\"\nWorkingDirectory=/data/jenkins\n" > /etc/systemd/system/jenkins.service.d/override.conf'
+
+   sudo sed -i 's|^JENKINS_HOME=.*|JENKINS_HOME=/data/jenkins|' /etc/default/jenkins
+   grep JENKINS_HOME /etc/default/jenkins
 
    sudo systemctl daemon-reload
    sudo systemctl enable jenkins
@@ -130,22 +142,28 @@ extra setup (see Step 5).
 
 4. Confirm `status` shows `active (running)`.
 
+![Architecture Diagram](../img/jenkins-systemctl-status.png)
+
 5. Back in the EC2 console: select the instance → **Actions → Image and templates
    → Create image**. Name it `jenkins-controller-ami`. Wait for it to become
    `available` under **AMIs**.
 
-6. **Terminate** the temporary `jenkins-controller-build` instance — the real
+![Architecture Diagram](../img/jenkins-controller-ami.png)
+
+6. **Terminate** the temporary `jenkins-controller-build` instance - the real
    controller instance will be launched from this AMI by the ASG in Step 8.
 
-## Step 6 — Build the agent AMI
+## Step 6 - Build the agent AMI
 
 1. **Launch instance** again:
    - Name: `jenkins-agent-build`
-   - AMI: Ubuntu Server 22.04 LTS
+   - AMI: Ubuntu Server 24.04 LTS
    - Key pair: **the same `jenkins-key`** used for the controller
    - Security group: `jenkins-agent-sg`
    - IAM instance profile: `jenkins-role` (only needed if fetching the key from
-     SSM — skip if using the same-key-pair simplification below)
+     SSM - skip if using the same-key-pair simplification below)
+
+![Architecture Diagram](../img/jenkins-agent-build.png)
 
 2. Connect via **EC2 Instance Connect** and run:
 
