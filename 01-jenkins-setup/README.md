@@ -1,8 +1,8 @@
 # Jenkins HA Setup on AWS — Manual Console Deployment (No Terraform / Ansible / CLI)
 
-This is a pure AWS Management Console walkthrough for the same architecture as the
-Terraform+Packer+Ansible version of this project: a Jenkins controller behind an
-ALB/ASG with `JENKINS_HOME` on EFS, plus a separate Jenkins agent instance.
+This is a pure AWS Management Console walkthrough for Jenkins Setup:
+a Jenkins controller behind an ALB/ASG with `JENKINS_HOME` on EFS, plus
+a separate Jenkins agent instance.
 
 **One honest caveat:** the AWS Console can create every piece of *infrastructure*
 by clicking (IAM, EFS, EC2, ALB, ASG). But installing software *inside* an
@@ -18,8 +18,8 @@ EC2 console) for that, so you never need PuTTY, Git Bash, or a local SSH client.
 
 ## Step 1 — Create the IAM role
 
-*(Only needed if you want the agent to fetch its SSH key from SSM like the original
-setup. See the simplification note in Step 5 for skipping this entirely.)*
+*(Only needed if you want the agent to fetch its SSH key from SSM.
+See the simplification note in Step 5 for skipping this entirely.)*
 
 1. Go to **IAM → Policies → Create policy**.
 2. Choose the **JSON** tab and paste:
@@ -36,6 +36,9 @@ setup. See the simplification note in Step 5 for skipping this entirely.)*
    }
    ```
 3. Name it `jenkins-iam-policy` and create it.
+
+![Architecture Diagram](img/jenkins-iam-policy.png)
+
 4. Go to **IAM → Roles → Create role** → Trusted entity type: **AWS service** →
    Use case: **EC2** → Next.
 5. Attach `jenkins-iam-policy` → Next → name the role `jenkins-role` → Create role.
