@@ -145,6 +145,7 @@ Fill in:
 - **Name/description** - anything identifiable
 - **Client IPv4 CIDR** - a range that does **not** overlap your VPC CIDR (e.g. VPC = `10.0.0.0/16`, client CIDR = `172.16.0.0/22`). AWS hands these IPs to connecting devices.
 ![Architecture Diagram](../img/client-vpn-ip.png)
+
 - **Authentication** — choose **mutual authentication**, select the server cert and client cert from ACM
 ![Architecture Diagram](../img/client-vpn-authentication.png)
 
@@ -177,6 +178,7 @@ Creating authorization rules will help to control the client's access to the net
 - Download the client configuration file from the endpoint's **Download client configuration** option.
 ![Architecture Diagram](../img/ovpn-client-download.png)
 - Open it in a text editor and paste in your client cert/key contents (from `~/certs`) inside the `<cert>` and `<key>` blocks. This is required becuase we opted for mutual SSL based VPN connectivity.
+
 ![Architecture Diagram](../img/configuration-file-modifications.png)
 
 ### Step 7 - Install OpenVPN and connect
