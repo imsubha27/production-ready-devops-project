@@ -143,9 +143,8 @@ Console path: **VPC → Virtual Private Network → Client VPN Endpoints → Cre
 
 Fill in:
 - **Name/description** - anything identifiable
-- **Client IPv4 CIDR** - a range that does **not** overlap your VPC CIDR
-  (e.g. VPC = `10.0.0.0/16`, client CIDR = `172.16.0.0/22`). AWS hands these IPs to connecting devices.
-  ![Architecture Diagram](../img/client-vpn-ip.png)
+- **Client IPv4 CIDR** - a range that does **not** overlap your VPC CIDR (e.g. VPC = `10.0.0.0/16`, client CIDR = `172.16.0.0/22`). AWS hands these IPs to connecting devices.
+![Architecture Diagram](../img/client-vpn-ip.png)
 
 - **Authentication** — choose **mutual authentication**, select the server cert and client cert from ACM
 ![Architecture Diagram](../img/client-vpn-authentication.png)
