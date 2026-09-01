@@ -95,7 +95,7 @@ cd easy-rsa/easyrsa3
 
 ./easyrsa init-pki
 ./easyrsa build-ca nopass                               # creates the CA
-./easyrsa build-server-full server nopass               # server cert/key
+./easyrsa build-server-full server.devopscube nopass    # server cert/key
 ./easyrsa build-client-full clients.devopscube nopass   # client cert/key
 ```
 
@@ -104,8 +104,8 @@ Collect everything into one folder:
 ```bash
 mkdir ~/certs
 cp pki/ca.crt ~/certs
-cp pki/issued/server.crt ~/certs
-cp pki/private/server.key ~/certs
+cp pki/issued/server.devopscube.crt ~/certs
+cp pki/private/server.devopscube.key ~/certs
 cp pki/issued/clients.devopscube.crt ~/certs
 cp pki/private/clients.devopscube.key ~/certs
 ```
@@ -146,9 +146,7 @@ Fill in:
 - **Client IPv4 CIDR** - a range that does **not** overlap your VPC CIDR (e.g. VPC = `10.0.0.0/16`, client CIDR = `172.16.0.0/22`). AWS hands these IPs to connecting devices.
 ![Architecture Diagram](../img/client-vpn-ip.png)
 - **Authentication** — choose **mutual authentication**, select the server cert and client cert from ACM
-  > [!NOTE]
-  > If you are generating server and client certificates from a same Certificate Authority (CA), you can use the server certificate ARN for both server and client when you create a Client VPN Endpoint.
-  ![Architecture Diagram](../img/client-vpn-authentication.png)
+![Architecture Diagram](../img/client-vpn-authentication.png)
 
 - **Transport protocol** - UDP (recommended; lower latency)
 - **Split-tunnel** - enable it, if you dont want to route *all* client traffic (including normal internet browsing) through the VPN. Otherwise you will not be able to access internet while connected to the VPN
@@ -170,18 +168,18 @@ Select the endpoint → **Target network associations** → add a private subnet
 ### Step 5 - Add an authorization rule
 Creating authorization rules will help to control the client's access to the network. We can specify which subnets and their resources that clients can access.
 
-Select the endpoint → **Authorization rules** → **Add authorization rule**
+- Select the endpoint → **Authorization rules** → **Add authorization rule**
 
-Specify which subnet(s) clients are allowed to reach, e.g. `10.0.4.0/24`. Without a rule for a subnet, clients can't reach it even if it's routable.
+- Specify which subnet(s) clients are allowed to reach, e.g. `10.0.4.0/24`. Without a rule for a subnet, clients can't reach it even if it's routable.
 
 ### Step 6 - Configure the client `.ovpn` file
 
-Download the client configuration file from the endpoint's **Download client configuration** option.
+- Download the client configuration file from the endpoint's **Download client configuration** option.
 ![Architecture Diagram](../img/ovpn-client-download.png)
-Open it in a text editor and paste in your client cert/key contents (from `~/certs`) inside the `<cert>` and `<key>` blocks. This is required becuase we opted for mutual SSL based VPN connectivity.
+- Open it in a text editor and paste in your client cert/key contents (from `~/certs`) inside the `<cert>` and `<key>` blocks. This is required becuase we opted for mutual SSL based VPN connectivity.
 ![Architecture Diagram](../img/configuration-file-modifications.png)
 
-### Step 7 — Install OpenVPN and connect
+### Step 7 - Install OpenVPN and connect
 
 - Download the [OpenVPN client](https://openvpn.net/community-downloads/) for your OS
 - Import the edited `.ovpn` file
@@ -190,8 +188,12 @@ Open it in a text editor and paste in your client cert/key contents (from `~/cer
 ### Step 8 - Test
 
 - Launch a test EC2 instance **without a public IP** inside the authorized subnet (`10.0.4.0/24` in this example)
+![Architecture Diagram](../img/aws-ec2-private-ip.png)
 - Allow SSH/HTTP/ICMP in its security group (scoped to the VPN's security group or your client CIDR, not "anywhere," for anything beyond a quick test)
+![Architecture Diagram](../img/sg-inbound-rules.png)
+![Architecture Diagram](../img/client-vpn-sg.png)
 - From your workstation (while connected to the VPN), `ping` / `ssh` / `curl` the instance's **private IP**
+![Architecture Diagram](../img/test-ping.png)
 
 If that works, you have private, encrypted access to your VPC without a bastion or public-facing resources.
 
